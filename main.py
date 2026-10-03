@@ -94,7 +94,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main")]]
         await query.edit_message_text(
             "💵 لقد اخترت التحويل من **الدولار إلى الليرة السورية**.\n\n"
-            "الآن أرسل لي الرقم أو الكمية بالدولار (مثال: `50` أو `100`):",
+            "الأن أرسل لي الرقم أو الكمية بالدولار (مثال: `50` أو `100`):",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -143,6 +143,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = user_states[user_id]
     
     if state == "to_syp":
+        # من دولار إلى ليرة (ضرب بسعر الصرف)
         res_sell = amount * sell_price
         res_buy = amount * buy_price
         await update.message.reply_text(
@@ -152,7 +153,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     elif state == "to_usd":
-        # تصحيح عملية القسمة بحيث نقسم المبلغ بالليرة على سعر الصرف الصحيح
+        # من ليرة إلى دولار (قسمة على سعر الصرف)
         res_sell = amount / sell_price if sell_price > 0 else 0
         res_buy = amount / buy_price if buy_price > 0 else 0
         await update.message.reply_text(
