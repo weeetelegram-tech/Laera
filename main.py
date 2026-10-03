@@ -26,7 +26,7 @@ def run_dummy_server():
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 # --- 2. كود البوت الأصلي مع التوكن الجديد ---
-TOKEN = os.environ.get("TOKEN", "8886929977:AAE41PCPX6zlxZrrERIKtWz31pH4fmR07ys")
+TOKEN = os.environ.get("TOKEN", "8886929977:AAHj-5yZ_N6WQV0USUnBplwouTSJBodU4-c")
 API_URL = "https://liranews.info/api/public/v1/price/usdsypd"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
