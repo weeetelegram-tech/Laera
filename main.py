@@ -25,7 +25,7 @@ def run_dummy_server():
 # تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. كود البوت الأصلي ---
+# --- 2. كود البوت الأصلي مع التوكن الجديد ---
 TOKEN = os.environ.get("TOKEN", "8886929977:AAE41PCPX6zlxZrrERIKtWz31pH4fmR07ys")
 API_URL = "https://liranews.info/api/public/v1/price/usdsypd"
 
@@ -138,8 +138,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ تعذر جلب أسعار الصرف الحالية من الخادم.")
         return
         
-    sell_price = rates["sell"]
-    buy_price = rates["buy"]
+    sell_price = float(rates["sell"])
+    buy_price = float(rates["buy"])
     state = user_states[user_id]
     
     if state == "to_syp":
@@ -152,12 +152,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     elif state == "to_usd":
+        # تصحيح عملية القسمة بحيث نقسم المبلغ بالليرة على سعر الصرف الصحيح
         res_sell = amount / sell_price if sell_price > 0 else 0
         res_buy = amount / buy_price if buy_price > 0 else 0
         await update.message.reply_text(
             f"🇸🇾 نتيجة تحويل **{amount:,.2f} ل.س**:\n\n"
-            f"🔴 على أساس سعر البيع: **{res_sell:,.2f} $**\n"
-            f"🟢 على أساس سعر الشراء: **{res_buy:,.2f} $**",
+            f"🔴 على أساس سعر البيع ({sell_price}): **{res_sell:,.2f} $**\n"
+            f"🟢 على أساس سعر الشراء ({buy_price}): **{res_buy:,.2f} $**",
             parse_mode="Markdown"
         )
 
