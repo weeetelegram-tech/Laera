@@ -1,4 +1,4 @@
-0python-telegram-bot
+python-telegram-bot
 requests
 logging
 asyncio
