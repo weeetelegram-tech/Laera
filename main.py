@@ -1,25 +1,42 @@
+import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import logging
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import asyncio
 
-# التوكن الجديد
-TOKEN = "8985199717:AAHt6ZRc5h0DsKJlVX92YeZyAbpi8TlJpiQ"
+# --- 1. سيرفر ويب وهمي لإرضاء منصة Render ---
+class DummyServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running successfully!")
+
+    def log_message(self, format, *args):
+        return  # إخفاء سجلات الـ HTTP لعدم إغراق التيرمينال
+
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), DummyServer)
+    server.serve_forever()
+
+# تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+# --- 2. كود البوت الأصلي ---
+TOKEN = os.environ.get("TOKEN", "8985199717:AAHt6ZRc5h0DsKJlVX92YeZyAbpi8TlJpiQ")
 API_URL = "https://liranews.info/api/public/v1/price/usdsypd"
 
-# إعداد السجلات
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 active_users = set()
 last_known_price = None
-
-# قاموس مؤقت لتخزين حالة المستخدم (هل يريد تحويل دولار->ليرة أو ليرة->دولار عند إرسال الرقم)
 user_states = {}
 
 def get_exchange_data():
-    """جلب بيانات السعر كاملة (بيع وشراء وقيمة) من الـ API"""
     try:
         response = requests.get(API_URL, timeout=10)
         data = response.json()
@@ -34,7 +51,6 @@ def get_exchange_data():
         return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر البدء /start"""
     user_id = update.effective_user.id
     active_users.add(user_id)
     
@@ -53,7 +69,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """التعامل مع الأزرار"""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -104,17 +119,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("اختر ما تحتاجه:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """التعامل مع الأرقام والكميات التي يكتبها المستخدم"""
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
-    # التحقق إن كان المستخدم اختار وضع تحويل مسبقاً
     if user_id not in user_states:
         await update.message.reply_text("الرجاء استخدام الأوامر أو الضغط على أزرار القائمة الرئيسية للبدء /start أولاً.")
         return
         
     try:
-        # تنظيف النص من الفواصل إن وجدت
         clean_text = text.replace(",", "").replace(" ", "")
         amount = float(clean_text)
     except ValueError:
@@ -131,7 +143,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = user_states[user_id]
     
     if state == "to_syp":
-        # التحويل من دولار ليرة (عادة يعتمد سعر البيع أو السعر الوسطي)
         res_sell = amount * sell_price
         res_buy = amount * buy_price
         await update.message.reply_text(
@@ -141,7 +152,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     elif state == "to_usd":
-        # التحويل من ليرة لدولار
         res_sell = amount / sell_price if sell_price > 0 else 0
         res_buy = amount / buy_price if buy_price > 0 else 0
         await update.message.reply_text(
@@ -152,7 +162,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def check_price_changes(app: Application):
-    """مهمة مراقبة تغير السعر في الخلفية وإرسال تنبيهات"""
     global last_known_price
     while True:
         await asyncio.sleep(60)
@@ -190,7 +199,6 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # التعديل: إيقاف التحديثات القديمة عند بدء التشغيل لمنع أخطاء التعارض (Conflict Error)
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
