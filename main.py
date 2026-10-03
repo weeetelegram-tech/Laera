@@ -190,7 +190,8 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    application.run_polling()
+    # التعديل: إيقاف التحديثات القديمة عند بدء التشغيل لمنع أخطاء التعارض (Conflict Error)
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
