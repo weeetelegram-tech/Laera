@@ -3,7 +3,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import logging
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import asyncio
 
@@ -25,47 +25,54 @@ def run_dummy_server():
 # تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. كود البوت مع التوكن الجديد ---
+# --- 2. كود البوت مع LiraScope API الجديد ---
 TOKEN = os.environ.get("TOKEN", "8886929977:AAHPBrqjqk9GtD0LzCEZtqp0y1fjvDndWG4")
-
-# رابط جلب العملات، المعادن، المحروقات، والعملات الرقمية دفعة واحدة
-API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,sar,aed,jod,g24sypd,g21sypd,g18sypd,silver,gas,mazot,benzin,btc,eth"
+API_BASE = "https://lirascope.syria-cloud.sy/api/v1"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 active_users = set()
-last_known_price = None
+last_known_prices = {}  # لتتبع أسعار العناصر المخصصة للتنبيه فقط
 user_states = {}
 
 def get_exchange_data():
     try:
-        response = requests.get(API_URL, timeout=10)
-        data = response.json()
-        return data
+        response = requests.get(f"{API_BASE}/rates/latest?lang=ar", timeout=10)
+        return response.json()
     except Exception as e:
-        logger.error(f"خطأ في جلب السعر: {e}")
+        logger.error(f"خطأ في جلب الأسعار: {e}")
         return None
 
-async def set_bot_commands(application: Application):
-    commands = [
-        BotCommand("start", "بدء تشغيل البوت والعودة للرئيسية")
-    ]
-    await application.bot.set_my_commands(commands)
+def get_gold_data():
+    try:
+        response = requests.get(f"{API_BASE}/gold/latest?lang=ar", timeout=10)
+        return response.json()
+    except Exception as e:
+        logger.error(f"خطأ في جلب الذهب: {e}")
+        return None
+
+def get_crypto_data():
+    try:
+        response = requests.get(f"{API_BASE}/crypto/latest?lang=ar", timeout=10)
+        return response.json()
+    except Exception as e:
+        logger.error(f"خطأ في جلب العملات الرقمية: {e}")
+        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     active_users.add(user_id)
     
     keyboard = [
-        [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices", style="success")],
+        [InlineKeyboardButton("💱 أسعار العملات والذهب الحالية", callback_data="get_prices", style="success")],
         [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp", style="primary")],
         [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd", style="danger")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "مرحباً بك في بوت أسعار الصرف والتحديثات الفورية.\n"
+        "مرحباً بك في بوت أسعار الصرف والتحديثات الفورية (عبر LiraScope).\n"
         "• يمكنك الضغط على الأسعار لمتابعتها.\n"
         "• أو اختر نوع التحويل ثم **اكتب الرقم والكمية مباشرة في الدردشة** لتحويلها بدقة!",
         reply_markup=reply_markup
@@ -78,72 +85,56 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     
     if data == "get_prices":
-        raw_data = get_exchange_data()
-        if raw_data and isinstance(raw_data, dict):
-            text = "📊 **النشرة الشاملة للأسعار (عملات، معادن، محروقات، وعملات رقمية):**\n\n"
+        rates_data = get_exchange_data()
+        gold_data = get_gold_data()
+        crypto_data = get_crypto_data()
+        
+        text = "📊 **أسعار الصرف، العملات والذهب الحالية:**\n\n"
+        
+        # جلب أسعار السوق (Market Rates)
+        if rates_data and "marketRates" in rates_data:
+            text += "🌐 **أسعار السوق:**\n"
+            for item in rates_data["marketRates"]:
+                curr = item.get("currency")
+                mid = item.get("mid")
+                buy = item.get("buy")
+                sell = item.get("sell")
+                text += f"🔹 **{curr}**: الوسطي ({mid}) | 🔴 بيع: {sell} | 🟢 شراء: {buy}\n"
+            text += "\n"
             
-            # تقسيم العناصر إلى أقسام محددة وترتيبها
-            sections = {
-                "💵 قسم العملات": ["usdsypd", "eursyp", "usdtry", "sar", "aed", "jod"],
-                "⛽ قسم المحروقات": ["gas", "mazot", "benzin"],
-                "🪙 قسم المعادن": ["g24sypd", "g21sypd", "g18sypd", "silver"],
-                "🪙 قسم العملات الرقمية": ["btc", "eth"]
-            }
-            
-            rendered_keys = set()
-            
-            for section_title, keys in sections.items():
-                section_content = ""
-                for key in keys:
-                    if key in raw_data:
-                        price_info = raw_data[key]
-                        rendered_keys.add(key)
+        # جلب أسعار المصرف المركزي (CBS Rates)
+        if rates_data and "cbsRates" in rates_data and rates_data["cbsRates"]:
+            text += "🏦 **أسعار المصرف المركزي:**\n"
+            for item in rates_data["cbsRates"]:
+                curr = item.get("currency")
+                mid = item.get("mid")
+                text += f"🔹 **{curr}**: {mid}\n"
+            text += "\n"
+
+        # جلب الذهب إن وجد
+        if gold_data:
+            text += "🟡 **أسعار الذهب:**\n"
+            if isinstance(gold_data, list):
+                for g in gold_data:
+                    text += f"🔸 {g.get('currency', 'الذهب')}: السعر {g.get('mid', g.get('buy', ''))}\n"
+            elif isinstance(gold_data, dict):
+                for g_key, g_val in gold_data.items():
+                    if isinstance(g_val, dict):
+                        text += f"🔸 {g_key}: السعر {g_val.get('mid', g_val.get('buy', ''))}\n"
+            text += "\n"
+
+        # جلب العملات الرقمية إن وجدت
+        if crypto_data:
+            text += "🪙 **العملات الرقمية:**\n"
+            if isinstance(crypto_data, list):
+                for c in crypto_data:
+                    text += f"🔹 {c.get('currency', '')}: {c.get('mid', '')}\n"
+            elif isinstance(crypto_data, dict):
+                for c_key, c_val in crypto_data.items():
+                    if isinstance(c_val, dict):
+                        text += f"🔹 {c_key}: {c_val.get('mid', '')}\n"
                         
-                        names_map = {
-                            "usdsypd": "🔹 الدولار الأمريكي مقابل الليرة",
-                            "eursyp": "💶 اليورو مقابل الليرة",
-                            "usdtry": "🇹🇷 الليرة التركية مقابل الليرة",
-                            "sar": "🇸🇦 الريال السعودي",
-                            "aed": "🇦🇪 الدرهم الإماراتي",
-                            "jod": "🇯🇴 الدينار الأردني",
-                            "gas": "🔥 أسطوانة الغاز",
-                            "mazot": "🛢️ مادة المازوت",
-                            "benzin": "⛽ مادة البنزين",
-                            "g24sypd": "🪙 غرام الذهب عيار 24",
-                            "g21sypd": "🪙 غرام الذهب عيار 21",
-                            "g18sypd": "🪙 غرام الذهب عيار 18",
-                            "silver": "🥈 غرام الفضة",
-                            "btc": "₿ البيتكوين (Bitcoin)",
-                            "eth": "Ξ الإيثريوم (Ethereum)"
-                        }
-                        
-                        title = names_map.get(key, f"🔸 {key.upper()}")
-                        val = price_info.get('value', 'غير متوفر')
-                        sell = price_info.get('sell', '-')
-                        buy = price_info.get('buy', '-')
-                        
-                        section_content += (
-                            f"{title}:\n"
-                            f"▫️ القيمة: **{val}**\n"
-                            f"🔴 البيع: **{sell}** | 🟢 الشراء: **{buy}**\n\n"
-                        )
-                
-                if section_content:
-                    text += f"__**{section_title}**__\n" + section_content + "\n"
-            
-            # إضافة أي عناصر إضافية قد ترد من الـ API ولم تُصنف
-            other_content = ""
-            for key, price_info in raw_data.items():
-                if key not in rendered_keys and isinstance(price_info, dict):
-                    other_content += (
-                        f"🔸 **{key.upper()}**:\n"
-                        f"▫️ القيمة: **{price_info.get('value', 'غير متوفر')}**\n"
-                        f"🔴 البيع: **{price_info.get('sell', '-')}** | 🟢 الشراء: **{price_info.get('buy', '-')}**\n\n"
-                    )
-            if other_content:
-                text += f"__**📌 أخرى**__\n" + other_content
-                
-        else:
+        if not rates_data and not gold_data:
             text = "❌ تعذر جلب الأسعار حالياً، حاول لاحقاً."
             
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
@@ -172,7 +163,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_main":
         user_states.pop(user_id, None)
         keyboard = [
-            [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices", style="success")],
+            [InlineKeyboardButton("💱 أسعار العملات والذهب الحالية", callback_data="get_prices", style="success")],
             [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp", style="primary")],
             [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd", style="danger")]
         ]
@@ -193,14 +184,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ يرجى إرسال رقم صحيح فقط (مثال: 100 أو 50000).")
         return
         
-    raw_data = get_exchange_data()
-    if not raw_data or "usdsypd" not in raw_data:
+    rates_data = get_exchange_data()
+    if not rates_data or "marketRates" not in rates_data:
         await update.message.reply_text("❌ تعذر جلب أسعار الصرف الحالية من الخادم.")
         return
         
-    price_info = raw_data.get("usdsypd", {})
-    sell_price = float(price_info.get("sell", 0))
-    buy_price = float(price_info.get("buy", 0))
+    # استخراج سعر الدولار الأساسي للتحويل
+    usd_rate = None
+    for item in rates_data["marketRates"]:
+        if item.get("currency") == "USD":
+            usd_rate = item
+            break
+            
+    if not usd_rate:
+        await update.message.reply_text("❌ تعذر العثور على سعر صرف الدولار حالياً.")
+        return
+        
+    sell_price = float(usd_rate.get("sell", 0))
+    buy_price = float(usd_rate.get("buy", 0))
     state = user_states[user_id]
     
     if state == "to_syp":
@@ -223,37 +224,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def check_price_changes(app: Application):
-    global last_known_price
+    global last_known_prices
+    # العناصر المستهدفة فقط للإشعارات والتنبيهات
+    target_items = ["USD", "بنزين", "مازوت", "غاز"]
+    
     while True:
         await asyncio.sleep(60)
-        raw_data = get_exchange_data()
-        if raw_data and "usdsypd" in raw_data:
-            price_info = raw_data.get("usdsypd", {})
-            current_price = price_info.get("value")
-            if current_price:
-                if last_known_price is None:
-                    last_known_price = current_price
-                elif current_price != last_known_price:
-                    diff = current_price - last_known_price
-                    direction = "📈 ارتفاع" if diff > 0 else "📉 انخفاض"
-                    
-                    message = (
-                        f"⚠️ **تنبيه تغير سعر الصرف!**\n\n"
-                        f"{direction} في السعر\n"
-                        f"🔹 السعر الحالي: **{current_price}**\n"
-                        f"🔴 البيع: {price_info.get('sell')} | 🟢 الشراء: {price_info.get('buy')}"
-                    )
-                    
-                    for user_id in active_users:
-                        try:
-                            await app.bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
-                        except Exception as e:
-                            logger.error(f"خطأ في إرسال الإشعار للمستخدم {user_id}: {e}")
-                    
-                    last_known_price = current_price
+        rates_data = get_exchange_data()
+        if rates_data and "marketRates" in rates_data:
+            for item in rates_data["marketRates"]:
+                curr = item.get("currency")
+                # التحقق إذا كانت العنصر من ضمن القائمة المستهدفة (دولار أو مشتقات نفطية إن وجدت بالـ API)
+                if curr in target_items or any(t in str(curr).lower() for t in target_items):
+                    current_price = item.get("mid", item.get("value"))
+                    if current_price is not None:
+                        if curr not in last_known_prices:
+                            last_known_prices[curr] = current_price
+                        elif current_price != last_known_prices[curr]:
+                            diff = current_price - last_known_prices[curr]
+                            direction = "📈 ارتفاع" if diff > 0 else "📉 انخفاض"
+                            
+                            message = (
+                                f"⚠️ **تنبيه تغير سعر {curr}!**\n\n"
+                                f"{direction} في السعر\n"
+                                f"🔹 السعر الحالي: **{current_price}**\n"
+                                f"🔴 البيع: {item.get('sell')} | 🟢 الشراء: {item.get('buy')}"
+                            )
+                            
+                            for user_id in active_users:
+                                try:
+                                    await app.bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
+                                except Exception as e:
+                                    logger.error(f"خطأ في إرسال الإشعار للمستخدم {user_id}: {e}")
+                            
+                            last_known_prices[curr] = current_price
 
 async def post_init(application: Application):
-    await set_bot_commands(application)
     asyncio.create_task(check_price_changes(application))
 
 def main():
