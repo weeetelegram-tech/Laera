@@ -25,14 +25,11 @@ def run_dummy_server():
 # تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. كود البوت مع التوكن المحدث ---
-TOKEN = os.environ.get("TOKEN", "8886929977:AAGaNWSvPcZWurO0XfxSTfu0B7wxD3wyzDM")
+# --- 2. كود البوت مع التوكن الجديد ---
+TOKEN = os.environ.get("TOKEN", "8886929977:AAHPBrqjqk9GtD0LzCEZtqp0y1fjvDndWG4")
 
-# روابط الأقسام المتاحة والمجربة من الموقع
-API_CURRENCIES = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,sar,aed,jod"
-API_FUELS = "https://liranews.info/api/public/v1/price/gas,mazot,benzin"
-API_METALS = "https://liranews.info/api/public/v1/price/g24sypd,g21sypd,g18sypd,silver"
-API_CRYPTO = "https://liranews.info/api/public/v1/price/btc,eth,usdt,bnb,sol,xrp,usdc,ada,doge,dot"
+# رابط جلب العملات، المعادن، المحروقات، والعملات الرقمية دفعة واحدة
+API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,sar,aed,jod,g24sypd,g21sypd,g18sypd,silver,gas,mazot,benzin,btc,eth"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,14 +38,14 @@ active_users = set()
 last_known_price = None
 user_states = {}
 
-def fetch_data(url):
+def get_exchange_data():
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(API_URL, timeout=10)
         data = response.json()
-        return data if isinstance(data, dict) else {}
+        return data
     except Exception as e:
-        logger.error(f"خطأ في جلب البيانات من {url}: {e}")
-        return {}
+        logger.error(f"خطأ في جلب السعر: {e}")
+        return None
 
 async def set_bot_commands(application: Application):
     commands = [
@@ -61,7 +58,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_users.add(user_id)
     
     keyboard = [
-        [InlineKeyboardButton("💱 الأسعار والأقسام الحالية", callback_data="sections_menu", style="success")],
+        [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices", style="success")],
         [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp", style="primary")],
         [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd", style="danger")]
     ]
@@ -69,7 +66,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "مرحباً بك في بوت أسعار الصرف والتحديثات الفورية.\n"
-        "• اختر من الأقسام للاطلاع على الأسعار المفصلة.\n"
+        "• يمكنك الضغط على الأسعار لمتابعتها.\n"
         "• أو اختر نوع التحويل ثم **اكتب الرقم والكمية مباشرة في الدردشة** لتحويلها بدقة!",
         reply_markup=reply_markup
     )
@@ -80,71 +77,81 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
     
-    # القائمة الرئيسية للأقسام
-    if data == "sections_menu":
-        keyboard = [
-            [InlineKeyboardButton("💵 قسم العملات", callback_data="cat_currencies", style="primary")],
-            [InlineKeyboardButton("⛽ قسم المحروقات", callback_data="cat_fuels", style="success")],
-            [InlineKeyboardButton("🪙 قسم المعادن والفضة", callback_data="cat_metals", style="success")],
-            [InlineKeyboardButton("🪙 قسم العملات الرقمية", callback_data="cat_crypto", style="primary")],
-            [InlineKeyboardButton("📊 عرض كل الأقسام دفعة واحدة", callback_data="get_prices", style="success")],
-            [InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_main", style="danger")]
-        ]
-        await query.edit_message_text(
-            "📂 **اختر القسم الذي تريد عرض أسعاره:**",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        
-    elif data == "cat_currencies":
-        raw_data = fetch_data(API_CURRENCIES)
-        text = "💵 **[ قسم العملات ]**\n\n" + format_data(raw_data)
-        keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data == "cat_fuels":
-        raw_data = fetch_data(API_FUELS)
-        text = "⛽ **[ قسم المحروقات ]**\n\n" + format_data(raw_data)
-        keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data == "cat_metals":
-        raw_data = fetch_data(API_METALS)
-        text = "🪙 **[ قسم المعادن والفضة والذهب ]**\n\n" + format_data(raw_data)
-        keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data == "cat_crypto":
-        raw_data = fetch_data(API_CRYPTO)
-        text = "🪙 **[ قسم العملات الرقمية ]**\n\n" + format_data(raw_data)
-        keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data == "get_prices":
-        text = "📊 **النشرة الشاملة لجميع الأسعار:**\n\n"
-        
-        c_data = fetch_data(API_CURRENCIES)
-        if c_data:
-            text += "__**💵 قسم العملات**__\n" + format_data(c_data) + "\n"
+    if data == "get_prices":
+        raw_data = get_exchange_data()
+        if raw_data and isinstance(raw_data, dict):
+            text = "📊 **النشرة الشاملة للأسعار (عملات، معادن، محروقات، وعملات رقمية):**\n\n"
             
-        f_data = fetch_data(API_FUELS)
-        if f_data:
-            text += "__**⛽ قسم المحروقات**__\n" + format_data(f_data) + "\n"
+            # تقسيم العناصر إلى أقسام محددة وترتيبها
+            sections = {
+                "💵 قسم العملات": ["usdsypd", "eursyp", "usdtry", "sar", "aed", "jod"],
+                "⛽ قسم المحروقات": ["gas", "mazot", "benzin"],
+                "🪙 قسم المعادن": ["g24sypd", "g21sypd", "g18sypd", "silver"],
+                "🪙 قسم العملات الرقمية": ["btc", "eth"]
+            }
             
-        m_data = fetch_data(API_METALS)
-        if m_data:
-            text += "__**🪙 قسم المعادن والفضة**__\n" + format_data(m_data) + "\n"
+            rendered_keys = set()
             
-        cr_data = fetch_data(API_CRYPTO)
-        if cr_data:
-            text += "__**🪙 قسم العملات الرقمية**__\n" + format_data(cr_data) + "\n"
+            for section_title, keys in sections.items():
+                section_content = ""
+                for key in keys:
+                    if key in raw_data:
+                        price_info = raw_data[key]
+                        rendered_keys.add(key)
+                        
+                        names_map = {
+                            "usdsypd": "🔹 الدولار الأمريكي مقابل الليرة",
+                            "eursyp": "💶 اليورو مقابل الليرة",
+                            "usdtry": "🇹🇷 الليرة التركية مقابل الليرة",
+                            "sar": "🇸🇦 الريال السعودي",
+                            "aed": "🇦🇪 الدرهم الإماراتي",
+                            "jod": "🇯🇴 الدينار الأردني",
+                            "gas": "🔥 أسطوانة الغاز",
+                            "mazot": "🛢️ مادة المازوت",
+                            "benzin": "⛽ مادة البنزين",
+                            "g24sypd": "🪙 غرام الذهب عيار 24",
+                            "g21sypd": "🪙 غرام الذهب عيار 21",
+                            "g18sypd": "🪙 غرام الذهب عيار 18",
+                            "silver": "🥈 غرام الفضة",
+                            "btc": "₿ البيتكوين (Bitcoin)",
+                            "eth": "Ξ الإيثريوم (Ethereum)"
+                        }
+                        
+                        title = names_map.get(key, f"🔸 {key.upper()}")
+                        val = price_info.get('value', 'غير متوفر')
+                        sell = price_info.get('sell', '-')
+                        buy = price_info.get('buy', '-')
+                        
+                        section_content += (
+                            f"{title}:\n"
+                            f"▫️ القيمة: **{val}**\n"
+                            f"🔴 البيع: **{sell}** | 🟢 الشراء: **{buy}**\n\n"
+                        )
+                
+                if section_content:
+                    text += f"__**{section_title}**__\n" + section_content + "\n"
             
-        keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
+            # إضافة أي عناصر إضافية قد ترد من الـ API ولم تُصنف
+            other_content = ""
+            for key, price_info in raw_data.items():
+                if key not in rendered_keys and isinstance(price_info, dict):
+                    other_content += (
+                        f"🔸 **{key.upper()}**:\n"
+                        f"▫️ القيمة: **{price_info.get('value', 'غير متوفر')}**\n"
+                        f"🔴 البيع: **{price_info.get('sell', '-')}** | 🟢 الشراء: **{price_info.get('buy', '-')}**\n\n"
+                    )
+            if other_content:
+                text += f"__**📌 أخرى**__\n" + other_content
+                
+        else:
+            text = "❌ تعذر جلب الأسعار حالياً، حاول لاحقاً."
+            
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
             
     elif data == "set_to_syp":
         user_states[user_id] = "to_syp"
-        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="sections_menu", style="danger")]]
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
         await query.edit_message_text(
             "💵 لقد اخترت التحويل من **الدولار إلى الليرة السورية**.\n\n"
             "الآن أرسل لي الرقم أو الكمية بالدولار (مثال: `50` أو `100`):",
@@ -154,7 +161,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif data == "set_to_usd":
         user_states[user_id] = "to_usd"
-        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="sections_menu", style="danger")]]
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
         await query.edit_message_text(
             "🇸🇾 لقد اخترت التحويل من **الليرة السورية إلى الدولار**.\n\n"
             "الآن أرسل لي المبلغ بالليرة السورية (مثال: `500000`):",
@@ -165,58 +172,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_main":
         user_states.pop(user_id, None)
         keyboard = [
-            [InlineKeyboardButton("💱 الأسعار والأقسام الحالية", callback_data="sections_menu", style="success")],
+            [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices", style="success")],
             [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp", style="primary")],
             [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd", style="danger")]
         ]
         await query.edit_message_text("اختر ما تحتاجه:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-def format_data(raw_data):
-    """دالة لترجمة وتنسيق أي بيانات تأتي من الـ API بشكل أنيق"""
-    if not raw_data:
-        return "▫️ لا توجد بيانات متاحة حالياً.\n"
-    
-    names_map = {
-        "usdsypd": "🔹 الدولار الأمريكي مقابل الليرة",
-        "eursyp": "💶 اليورو مقابل الليرة",
-        "usdtry": "🇹🇷 الليرة التركية مقابل الليرة",
-        "sar": "🇸🇦 الريال السعودي",
-        "aed": "🇦🇪 الدرهم الإماراتي",
-        "jod": "🇯🇴 الدينار الأردني",
-        "gas": "🔥 أسطوانة الغاز",
-        "mazot": "🛢️ مادة المازوت",
-        "benzin": "⛽ مادة البنزين",
-        "g24sypd": "🪙 غرام الذهب عيار 24",
-        "g21sypd": "🪙 غرام الذهب عيار 21",
-        "g18sypd": "🪙 غرام الذهب عيار 18",
-        "silver": "🥈 غرام الفضة",
-        "btc": "₿ البيتكوين (Bitcoin)",
-        "eth": "Ξ الإيثريوم (Ethereum)",
-        "usdt": "₮ تيثر (USDT)",
-        "bnb": "🟡 باينانس كوين (BNB)",
-        "sol": "🟣 سولانا (Solana)",
-        "xrp": "✕ ربل (XRP)",
-        "usdc": "🔵 يو إس دي سي (USDC)",
-        "ada": "🔷 كاردانو (Cardano)",
-        "doge": "🐕 دوجكوين (Doge)",
-        "dot": "🟣 بولكادوت (DOT)"
-    }
-    
-    content = ""
-    for key, price_info in raw_data.items():
-        if isinstance(price_info, dict):
-            title = names_map.get(key, f"🔸 {key.upper()}")
-            val = price_info.get('value', 'غير متوفر')
-            sell = price_info.get('sell', '-')
-            buy = price_info.get('buy', '-')
-            
-            content += (
-                f"{title}:\n"
-                f"▫️ القيمة: **{val}**\n"
-                f"🔴 البيع: **{sell}** | 🟢 الشراء: **{buy}**\n\n"
-            )
-            
-    return content if content else "▫️ لا تتوفر معلومات حالياً.\n"
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -233,7 +193,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ يرجى إرسال رقم صحيح فقط (مثال: 100 أو 50000).")
         return
         
-    raw_data = fetch_data(API_CURRENCIES)
+    raw_data = get_exchange_data()
     if not raw_data or "usdsypd" not in raw_data:
         await update.message.reply_text("❌ تعذر جلب أسعار الصرف الحالية من الخادم.")
         return
@@ -266,7 +226,7 @@ async def check_price_changes(app: Application):
     global last_known_price
     while True:
         await asyncio.sleep(60)
-        raw_data = fetch_data(API_CURRENCIES)
+        raw_data = get_exchange_data()
         if raw_data and "usdsypd" in raw_data:
             price_info = raw_data.get("usdsypd", {})
             current_price = price_info.get("value")
