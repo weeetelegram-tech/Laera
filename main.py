@@ -25,7 +25,7 @@ def run_dummy_server():
 # تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. كود البوت مع LiraScope API الجديد ---
+# --- 2. كود البوت مع LiraScope API وتقسيم الأقسام ---
 TOKEN = os.environ.get("TOKEN", "8886929977:AAHPBrqjqk9GtD0LzCEZtqp0y1fjvDndWG4")
 API_BASE = "https://lirascope.syria-cloud.sy/api/v1"
 
@@ -89,53 +89,88 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         gold_data = get_gold_data()
         crypto_data = get_crypto_data()
         
-        text = "📊 **أسعار الصرف، العملات والذهب الحالية:**\n\n"
+        text = "📊 **النشرة الشاملة للأسعار (حسب الأقسام):**\n\n"
         
-        # جلب أسعار السوق (Market Rates)
-        if rates_data and "marketRates" in rates_data:
-            text += "🌐 **أسعار السوق:**\n"
-            for item in rates_data["marketRates"]:
-                curr = item.get("currency")
-                mid = item.get("mid")
-                buy = item.get("buy")
-                sell = item.get("sell")
-                text += f"🔹 **{curr}**: الوسطي ({mid}) | 🔴 بيع: {sell} | 🟢 شراء: {buy}\n"
-            text += "\n"
+        # 1. قسم العملات (السوق المركزي والسوق السوداء)
+        text += "💱 **أولاً: العملات**\n"
+        has_currencies = False
+        
+        if rates_data:
+            if "marketRates" in rates_data and rates_data["marketRates"]:
+                has_currencies = True
+                text += "🔸 *أسعار السوق السوداء:*\n"
+                for item in rates_data["marketRates"]:
+                    curr = item.get("currency")
+                    mid = item.get("mid")
+                    buy = item.get("buy")
+                    sell = item.get("sell")
+                    text += f"• **{curr}**: الوسطي ({mid}) | بيع: {sell} | شراء: {buy}\n"
             
-        # جلب أسعار المصرف المركزي (CBS Rates)
-        if rates_data and "cbsRates" in rates_data and rates_data["cbsRates"]:
-            text += "🏦 **أسعار المصرف المركزي:**\n"
-            for item in rates_data["cbsRates"]:
-                curr = item.get("currency")
-                mid = item.get("mid")
-                text += f"🔹 **{curr}**: {mid}\n"
-            text += "\n"
+            if "cbsRates" in rates_data and rates_data["cbsRates"]:
+                has_currencies = True
+                text += "\n🔸 *أسعار المصرف المركزي:*\n"
+                for item in rates_data["cbsRates"]:
+                    curr = item.get("currency")
+                    mid = item.get("mid")
+                    text += f"• **{curr}**: {mid}\n"
+                    
+        if not has_currencies:
+            text += "• لا توجد بيانات عملات متاحة حالياً.\n"
+        text += "\n"
 
-        # جلب الذهب إن وجد
+        # 2. قسم المعادن والذهب
+        text += "🟡 **ثانياً: المعادن (الذهب)**\n"
         if gold_data:
-            text += "🟡 **أسعار الذهب:**\n"
             if isinstance(gold_data, list):
                 for g in gold_data:
-                    text += f"🔸 {g.get('currency', 'الذهب')}: السعر {g.get('mid', g.get('buy', ''))}\n"
+                    text += f"• {g.get('currency', 'الذهب')}: السعر {g.get('mid', g.get('buy', ''))}\n"
             elif isinstance(gold_data, dict):
-                for g_key, g_val in gold_data.items():
-                    if isinstance(g_val, dict):
-                        text += f"🔸 {g_key}: السعر {g_val.get('mid', g_val.get('buy', ''))}\n"
-            text += "\n"
+                # التحقق إذا كانت البيانات تأتي داخل مفاتيح أو قائمة rates
+                g_list = gold_data.get("rates", gold_data)
+                if isinstance(g_list, list):
+                    for g in g_list:
+                        text += f"• {g.get('currency', 'الذهب')}: {g.get('mid', '')}\n"
+                else:
+                    for g_key, g_val in gold_data.items():
+                        if isinstance(g_val, dict):
+                            text += f"• {g_key}: السعر {g_val.get('mid', g_val.get('buy', ''))}\n"
+        else:
+            text += "• لا توجد بيانات ذهب متاحة بالـ API حالياً.\n"
+        text += "\n"
 
-        # جلب العملات الرقمية إن وجدت
+        # 3. قسم المحروقات (إن توفرت في الـ API ضمن السوق أو البيانات)
+        text += "⛽ **ثالثاً: المحروقات**\n"
+        found_fuels = False
+        fuel_keywords = ["بنزين", "مازوت", "غاز", "fuel", "gasoline", "diesel"]
+        
+        # البحث في بيانات السوق أو العملات عن المحروقات
+        all_items = []
+        if rates_data and "marketRates" in rates_data:
+            all_items.extend(rates_data["marketRates"])
+        
+        for item in all_items:
+            curr_str = str(item.get("currency", "")).lower()
+            if any(kw in curr_str for kw in fuel_keywords):
+                found_fuels = True
+                text += f"• **{item.get('currency')}**: السعر ({item.get('mid', item.get('buy', ''))})\n"
+                
+        if not found_fuels:
+            text += "• غير متوفرة في الـ API حالياً.\n"
+        text += "\n"
+
+        # 4. قسم العملات الرقمية
+        text += "🪙 **رابعاً: العملات الرقمية**\n"
         if crypto_data:
-            text += "🪙 **العملات الرقمية:**\n"
-            if isinstance(crypto_data, list):
-                for c in crypto_data:
-                    text += f"🔹 {c.get('currency', '')}: {c.get('mid', '')}\n"
-            elif isinstance(crypto_data, dict):
-                for c_key, c_val in crypto_data.items():
+            c_list = crypto_data.get("rates", crypto_data)
+            if isinstance(c_list, list):
+                for c in c_list:
+                    text += f"• **{c.get('currency', '')}**: {c.get('mid', '')}\n"
+            elif isinstance(c_list, dict):
+                for c_key, c_val in c_list.items():
                     if isinstance(c_val, dict):
-                        text += f"🔹 {c_key}: {c_val.get('mid', '')}\n"
-                        
-        if not rates_data and not gold_data:
-            text = "❌ تعذر جلب الأسعار حالياً، حاول لاحقاً."
+                        text += f"• **{c_key}**: {c_val.get('mid', '')}\n"
+        else:
+            text += "• لا توجد بيانات عملات رقمية متاحة حالياً.\n"
             
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -189,7 +224,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ تعذر جلب أسعار الصرف الحالية من الخادم.")
         return
         
-    # استخراج سعر الدولار الأساسي للتحويل
     usd_rate = None
     for item in rates_data["marketRates"]:
         if item.get("currency") == "USD":
@@ -225,7 +259,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def check_price_changes(app: Application):
     global last_known_prices
-    # العناصر المستهدفة فقط للإشعارات والتنبيهات
     target_items = ["USD", "بنزين", "مازوت", "غاز"]
     
     while True:
@@ -234,7 +267,6 @@ async def check_price_changes(app: Application):
         if rates_data and "marketRates" in rates_data:
             for item in rates_data["marketRates"]:
                 curr = item.get("currency")
-                # التحقق إذا كانت العنصر من ضمن القائمة المستهدفة (دولار أو مشتقات نفطية إن وجدت بالـ API)
                 if curr in target_items or any(t in str(curr).lower() for t in target_items):
                     current_price = item.get("mid", item.get("value"))
                     if current_price is not None:
@@ -245,7 +277,7 @@ async def check_price_changes(app: Application):
                             direction = "📈 ارتفاع" if diff > 0 else "📉 انخفاض"
                             
                             message = (
-                                f"⚠️ **تنبيه تغير سعر {curr}!**\n\n"
+                                f"⚠️️ **تنبيه تغير سعر {curr}!**\n\n"
                                 f"{direction} في السعر\n"
                                 f"🔹 السعر الحالي: **{current_price}**\n"
                                 f"🔴 البيع: {item.get('sell')} | 🟢 الشراء: {item.get('buy')}"
