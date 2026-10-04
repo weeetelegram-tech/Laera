@@ -40,12 +40,7 @@ def get_exchange_data():
     try:
         response = requests.get(API_URL, timeout=10)
         data = response.json()
-        price_info = data.get("usdsypd", {})
-        return {
-            "value": price_info.get("value"),
-            "sell": price_info.get("sell"),
-            "buy": price_info.get("buy")
-        }
+        return data
     except Exception as e:
         logger.error(f"خطأ في جلب السعر: {e}")
         return None
@@ -55,9 +50,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_users.add(user_id)
     
     keyboard = [
-        [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices")],
-        [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp")],
-        [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd")]
+        [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices", style="success")],
+        [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp", style="primary")],
+        [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd", style="danger")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -75,33 +70,47 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     
     if data == "get_prices":
-        rates = get_exchange_data()
-        if rates:
-            text = (
-                f"📊 **أسعار صرف الدولار مقابل الليرة:**\n\n"
-                f"🔹 السعر الوسطي: **{rates['value']}**\n"
-                f"🔴 سعر البيع: **{rates['sell']}**\n"
-                f"🟢 سعر الشراء: **{rates['buy']}**"
-            )
+        raw_data = get_exchange_data()
+        if raw_data:
+            text = "📊 **أسعار الصرف والذهب الحالية:**\n\n"
+            
+            # جلب الدولار الأساسي
+            price_info = raw_data.get("usdsypd", {})
+            if price_info:
+                text += (
+                    f"🔹 **الدولار الأمريكي مقابل الليرة:**\n"
+                    f"▫️ السعر الوسطي: **{price_info.get('value')}**\n"
+                    f"🔴 البيع: **{price_info.get('sell')}** | 🟢 الشراء: **{price_info.get('buy')}**\n\n"
+                )
+            
+            # جلب أي عملات أخرى أو الذهب إذا توفرت في الـ API تلقائياً
+            for key, val in raw_data.items():
+                if key != "usdsypd" and isinstance(val, dict):
+                    name_title = key.upper()
+                    text += (
+                        f"🔸 **{name_title}:**\n"
+                        f"▫️ القيمة: **{val.get('value', 'غير متوفر')}**\n"
+                        f"🔴 البيع: **{val.get('sell', '-')}** | 🟢 الشراء: **{val.get('buy', '-')}**\n\n"
+                    )
         else:
             text = "❌ تعذر جلب الأسعار حالياً، حاول لاحقاً."
             
-        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main")]]
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
             
     elif data == "set_to_syp":
         user_states[user_id] = "to_syp"
-        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main")]]
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
         await query.edit_message_text(
             "💵 لقد اخترت التحويل من **الدولار إلى الليرة السورية**.\n\n"
-            "الأن أرسل لي الرقم أو الكمية بالدولار (مثال: `50` أو `100`):",
+            "الآن أرسل لي الرقم أو الكمية بالدولار (مثال: `50` أو `100`):",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
     elif data == "set_to_usd":
         user_states[user_id] = "to_usd"
-        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main")]]
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="back_main", style="danger")]]
         await query.edit_message_text(
             "🇸🇾 لقد اخترت التحويل من **الليرة السورية إلى الدولار**.\n\n"
             "الآن أرسل لي المبلغ بالليرة السورية (مثال: `500000`):",
@@ -112,9 +121,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_main":
         user_states.pop(user_id, None)
         keyboard = [
-            [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices")],
-            [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp")],
-            [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd")]
+            [InlineKeyboardButton("💱 أسعار البيع والشراء الحالية", callback_data="get_prices", style="success")],
+            [InlineKeyboardButton("💵 تحويل من دولار إلى ليرة سورية", callback_data="set_to_syp", style="primary")],
+            [InlineKeyboardButton("🇸🇾 تحويل من ليرة سورية إلى دولار", callback_data="set_to_usd", style="danger")]
         ]
         await query.edit_message_text("اختر ما تحتاجه:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -133,17 +142,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ يرجى إرسال رقم صحيح فقط (مثال: 100 أو 50000).")
         return
         
-    rates = get_exchange_data()
-    if not rates or not rates.get("sell") or not rates.get("buy"):
+    raw_data = get_exchange_data()
+    if not raw_data or "usdsypd" not in raw_data:
         await update.message.reply_text("❌ تعذر جلب أسعار الصرف الحالية من الخادم.")
         return
         
-    sell_price = float(rates["sell"])
-    buy_price = float(rates["buy"])
+    price_info = raw_data.get("usdsypd", {})
+    sell_price = float(price_info.get("sell", 0))
+    buy_price = float(price_info.get("buy", 0))
     state = user_states[user_id]
     
     if state == "to_syp":
-        # من دولار إلى ليرة (ضرب بسعر الصرف)
         res_sell = amount * sell_price
         res_buy = amount * buy_price
         await update.message.reply_text(
@@ -153,7 +162,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     elif state == "to_usd":
-        # من ليرة إلى دولار (قسمة على سعر الصرف)
         res_sell = amount / sell_price if sell_price > 0 else 0
         res_buy = amount / buy_price if buy_price > 0 else 0
         await update.message.reply_text(
@@ -167,29 +175,31 @@ async def check_price_changes(app: Application):
     global last_known_price
     while True:
         await asyncio.sleep(60)
-        rates = get_exchange_data()
-        if rates and rates.get("value"):
-            current_price = rates["value"]
-            if last_known_price is None:
-                last_known_price = current_price
-            elif current_price != last_known_price:
-                diff = current_price - last_known_price
-                direction = "📈 ارتفاع" if diff > 0 else "📉 انخفاض"
-                
-                message = (
-                    f"⚠️ **تنبيه تغير سعر الصرف!**\n\n"
-                    f"{direction} في السعر\n"
-                    f"🔹 السعر الحالي: **{current_price}**\n"
-                    f"🔴 البيع: {rates['sell']} | 🟢 الشراء: {rates['buy']}"
-                )
-                
-                for user_id in active_users:
-                    try:
-                        await app.bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
-                    except Exception as e:
-                        logger.error(f"خطأ في إرسال الإشعار للمستخدم {user_id}: {e}")
-                
-                last_known_price = current_price
+        raw_data = get_exchange_data()
+        if raw_data and "usdsypd" in raw_data:
+            price_info = raw_data.get("usdsypd", {})
+            current_price = price_info.get("value")
+            if current_price:
+                if last_known_price is None:
+                    last_known_price = current_price
+                elif current_price != last_known_price:
+                    diff = current_price - last_known_price
+                    direction = "📈 ارتفاع" if diff > 0 else "📉 انخفاض"
+                    
+                    message = (
+                        f"⚠️ **تنبيه تغير سعر الصرف!**\n\n"
+                        f"{direction} في السعر\n"
+                        f"🔹 السعر الحالي: **{current_price}**\n"
+                        f"🔴 البيع: {price_info.get('sell')} | 🟢 الشراء: {price_info.get('buy')}"
+                    )
+                    
+                    for user_id in active_users:
+                        try:
+                            await app.bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
+                        except Exception as e:
+                            logger.error(f"خطأ في إرسال الإشعار للمستخدم {user_id}: {e}")
+                    
+                    last_known_price = current_price
 
 async def post_init(application: Application):
     asyncio.create_task(check_price_changes(application))
