@@ -25,10 +25,11 @@ def run_dummy_server():
 # تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. كود البوت الأصلي مع التوكن ---
+# --- 2. كود البوت مع التوكن الجديد ---
 TOKEN = os.environ.get("TOKEN", "8886929977:AAHj-5yZ_N6WQV0USUnBplwouTSJBodU4-c")
-# رابط جلب الدولار والعملات والمعادن المتاحة دفعة واحدة
-API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,g21sypd"
+
+# رابط جلب كافة العملات، المعادن والخدمات المتاحة دفعة واحدة من الموقع
+API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,g21sypd,g18sypd,g24sypd,sar,aed,jod"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,7 +48,6 @@ def get_exchange_data():
         return None
 
 async def set_bot_commands(application: Application):
-    # تعيين زر /start في قائمة الأوامر للوصول السريع
     commands = [
         BotCommand("start", "بدء تشغيل البوت والعودة للرئيسية")
     ]
@@ -79,30 +79,64 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data == "get_prices":
         raw_data = get_exchange_data()
-        if raw_data:
-            text = "📊 **أسعار العملات والذهب الحالية:**\n\n"
+        if raw_data and isinstance(raw_data, dict):
+            text = "📊 **النشرة الكاملة لأسعار العملات والذهب:**\n\n"
             
-            # أسماء توضيحية للرموز لتظهر بشكل أنيق للمستخدم
-            names_map = {
-                "usdsypd": "🔹 الدولار الأمريكي مقابل الليرة",
-                "eursyp": "💶 اليورو مقابل الليرة",
-                "usdtry": "🇹🇷 الليرة التركية مقابل الليرة",
-                "g21sypd": "🪙 غرام الذهب عيار 21"
+            # ترتيب وترسيم الأقسام (جعل الدولار أولاً دائماً)
+            sections = {
+                "💵 العملات الأجنبية": ["usdsypd", "eursyp", "usdtry"],
+                "🪙 المعادن والذهب": ["g24sypd", "g21sypd", "g18sypd"],
+                "🌍 العملات العربية": ["sar", "aed", "jod"]
             }
             
-            if isinstance(raw_data, dict):
-                for key, price_info in raw_data.items():
-                    if isinstance(price_info, dict):
+            rendered_keys = set()
+            
+            for section_title, keys in sections.items():
+                section_content = ""
+                for key in keys:
+                    if key in raw_data:
+                        price_info = raw_data[key]
+                        rendered_keys.add(key)
+                        
+                        # أسماء توضيحية لكل رمز
+                        names_map = {
+                            "usdsypd": "🔹 الدولار الأمريكي مقابل الليرة",
+                            "eursyp": "💶 اليورو مقابل الليرة",
+                            "usdtry": "🇹🇷 الليرة التركية مقابل الليرة",
+                            "g24sypd": "🪙 غرام الذهب عيار 24",
+                            "g21sypd": "🪙 غرام الذهب عيار 21",
+                            "g18sypd": "🪙 غرام الذهب عيار 18",
+                            "sar": "🇸🇦 الريال السعودي",
+                            "aed": "🇦🇪 الدرهم الإماراتي",
+                            "jod": "🇯🇴 الدينار الأردني"
+                        }
+                        
                         title = names_map.get(key, f"🔸 {key.upper()}")
                         val = price_info.get('value', 'غير متوفر')
                         sell = price_info.get('sell', '-')
                         buy = price_info.get('buy', '-')
                         
-                        text += (
+                        section_content += (
                             f"{title}:\n"
-                            f"▫️ السعر/القيمة: **{val}**\n"
+                            f"▫️ القيمة: **{val}**\n"
                             f"🔴 البيع: **{sell}** | 🟢 الشراء: **{buy}**\n\n"
                         )
+                
+                if section_content:
+                    text += f"__**{section_title}**__\n" + section_content + "\n"
+            
+            # إضافة أي عناصر إضافية قد تظهر في الـ API ولم تُصنف ضمن الأقسام أعلاه
+            other_content = ""
+            for key, price_info in raw_data.items():
+                if key not in rendered_keys and isinstance(price_info, dict):
+                    other_content += (
+                        f"🔸 **{key.upper()}**:\n"
+                        f"▫️ القيمة: **{price_info.get('value', 'غير متوفر')}**\n"
+                        f"🔴 البيع: **{price_info.get('sell', '-')}** | 🟢 الشراء: **{price_info.get('buy', '-')}**\n\n"
+                    )
+            if other_content:
+                text += f"__**📌 أخرى**__\n" + other_content
+                
         else:
             text = "❌ تعذر جلب الأسعار حالياً، حاول لاحقاً."
             
