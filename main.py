@@ -28,8 +28,8 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 # --- 2. كود البوت مع التوكن الجديد ---
 TOKEN = os.environ.get("TOKEN", "8886929977:AAHj-5yZ_N6WQV0USUnBplwouTSJBodU4-c")
 
-# رابط جلب كافة العملات، المعادن والخدمات المتاحة دفعة واحدة من الموقع
-API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,g21sypd,g18sypd,g24sypd,sar,aed,jod"
+# رابط جلب العملات، المعادن، المحروقات، والعملات الرقمية دفعة واحدة
+API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,sar,aed,jod,g24sypd,g21sypd,g18sypd,silver,gas,mazot,benzin,btc,eth"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,13 +80,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "get_prices":
         raw_data = get_exchange_data()
         if raw_data and isinstance(raw_data, dict):
-            text = "📊 **النشرة الكاملة لأسعار العملات والذهب:**\n\n"
+            text = "📊 **النشرة الشاملة للأسعار (عملات، معادن، محروقات، وعملات رقمية):**\n\n"
             
-            # ترتيب وترسيم الأقسام (جعل الدولار أولاً دائماً)
+            # تقسيم العناصر إلى أقسام محددة وترتيبها
             sections = {
-                "💵 العملات الأجنبية": ["usdsypd", "eursyp", "usdtry"],
-                "🪙 المعادن والذهب": ["g24sypd", "g21sypd", "g18sypd"],
-                "🌍 العملات العربية": ["sar", "aed", "jod"]
+                "💵 قسم العملات": ["usdsypd", "eursyp", "usdtry", "sar", "aed", "jod"],
+                "⛽ قسم المحروقات": ["gas", "mazot", "benzin"],
+                "🪙 قسم المعادن": ["g24sypd", "g21sypd", "g18sypd", "silver"],
+                "🪙 قسم العملات الرقمية": ["btc", "eth"]
             }
             
             rendered_keys = set()
@@ -98,17 +99,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         price_info = raw_data[key]
                         rendered_keys.add(key)
                         
-                        # أسماء توضيحية لكل رمز
                         names_map = {
                             "usdsypd": "🔹 الدولار الأمريكي مقابل الليرة",
                             "eursyp": "💶 اليورو مقابل الليرة",
                             "usdtry": "🇹🇷 الليرة التركية مقابل الليرة",
+                            "sar": "🇸🇦 الريال السعودي",
+                            "aed": "🇦🇪 الدرهم الإماراتي",
+                            "jod": "🇯🇴 الدينار الأردني",
+                            "gas": "🔥 أسطوانة الغاز",
+                            "mazot": "🛢️ مادة المازوت",
+                            "benzin": "⛽ مادة البنزين",
                             "g24sypd": "🪙 غرام الذهب عيار 24",
                             "g21sypd": "🪙 غرام الذهب عيار 21",
                             "g18sypd": "🪙 غرام الذهب عيار 18",
-                            "sar": "🇸🇦 الريال السعودي",
-                            "aed": "🇦🇪 الدرهم الإماراتي",
-                            "jod": "🇯🇴 الدينار الأردني"
+                            "silver": "🥈 غرام الفضة",
+                            "btc": "₿ البيتكوين (Bitcoin)",
+                            "eth": "Ξ الإيثريوم (Ethereum)"
                         }
                         
                         title = names_map.get(key, f"🔸 {key.upper()}")
@@ -125,7 +131,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if section_content:
                     text += f"__**{section_title}**__\n" + section_content + "\n"
             
-            # إضافة أي عناصر إضافية قد تظهر في الـ API ولم تُصنف ضمن الأقسام أعلاه
+            # إضافة أي عناصر إضافية قد ترد من الـ API ولم تُصنف
             other_content = ""
             for key, price_info in raw_data.items():
                 if key not in rendered_keys and isinstance(price_info, dict):
