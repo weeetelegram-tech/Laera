@@ -3,7 +3,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import logging
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import asyncio
 
@@ -25,9 +25,10 @@ def run_dummy_server():
 # تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. كود البوت الأصلي مع التوكن الجديد ---
-TOKEN = os.environ.get("TOKEN", "8886929977:AAHj-5yZ_N6WQV0USUnBplwouTSJBodU4-c")
-API_URL = "https://liranews.info/api/public/v1/price/usdsypd"
+# --- 2. كود البوت الأصلي مع التوكن ---
+TOKEN = os.environ.get("TOKEN", "8886929977:AAE41PCPX6zlxZrrERIKtWz31pH4fmR07ys")
+# رابط جلب الدولار والعملات والمعادن المتاحة دفعة واحدة
+API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,g21sypd"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +45,13 @@ def get_exchange_data():
     except Exception as e:
         logger.error(f"خطأ في جلب السعر: {e}")
         return None
+
+async def set_bot_commands(application: Application):
+    # تعيين زر /start في قائمة الأوامر للوصول السريع
+    commands = [
+        BotCommand("start", "بدء تشغيل البوت والعودة للرئيسية")
+    ]
+    await application.bot.set_my_commands(commands)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -72,26 +80,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "get_prices":
         raw_data = get_exchange_data()
         if raw_data:
-            text = "📊 **أسعار الصرف والذهب الحالية:**\n\n"
+            text = "📊 **أسعار العملات والذهب الحالية:**\n\n"
             
-            # جلب الدولار الأساسي
-            price_info = raw_data.get("usdsypd", {})
-            if price_info:
-                text += (
-                    f"🔹 **الدولار الأمريكي مقابل الليرة:**\n"
-                    f"▫️ السعر الوسطي: **{price_info.get('value')}**\n"
-                    f"🔴 البيع: **{price_info.get('sell')}** | 🟢 الشراء: **{price_info.get('buy')}**\n\n"
-                )
+            # أسماء توضيحية للرموز لتظهر بشكل أنيق للمستخدم
+            names_map = {
+                "usdsypd": "🔹 الدولار الأمريكي مقابل الليرة",
+                "eursyp": "💶 اليورو مقابل الليرة",
+                "usdtry": "🇹🇷 الليرة التركية مقابل الليرة",
+                "g21sypd": "🪙 غرام الذهب عيار 21"
+            }
             
-            # جلب أي عملات أخرى أو الذهب إذا توفرت في الـ API تلقائياً
-            for key, val in raw_data.items():
-                if key != "usdsypd" and isinstance(val, dict):
-                    name_title = key.upper()
-                    text += (
-                        f"🔸 **{name_title}:**\n"
-                        f"▫️ القيمة: **{val.get('value', 'غير متوفر')}**\n"
-                        f"🔴 البيع: **{val.get('sell', '-')}** | 🟢 الشراء: **{val.get('buy', '-')}**\n\n"
-                    )
+            if isinstance(raw_data, dict):
+                for key, price_info in raw_data.items():
+                    if isinstance(price_info, dict):
+                        title = names_map.get(key, f"🔸 {key.upper()}")
+                        val = price_info.get('value', 'غير متوفر')
+                        sell = price_info.get('sell', '-')
+                        buy = price_info.get('buy', '-')
+                        
+                        text += (
+                            f"{title}:\n"
+                            f"▫️ السعر/القيمة: **{val}**\n"
+                            f"🔴 البيع: **{sell}** | 🟢 الشراء: **{buy}**\n\n"
+                        )
         else:
             text = "❌ تعذر جلب الأسعار حالياً، حاول لاحقاً."
             
@@ -202,6 +213,7 @@ async def check_price_changes(app: Application):
                     last_known_price = current_price
 
 async def post_init(application: Application):
+    await set_bot_commands(application)
     asyncio.create_task(check_price_changes(application))
 
 def main():
