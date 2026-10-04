@@ -25,7 +25,7 @@ def run_dummy_server():
 # تشغيل السيرفر الوهمي في الخيط الخلفي (Thread)
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- 2. كود البوت مع LiraScope API وتقسيم الأزرار ---
+# --- 2. كود البوت مع LiraScope API والأزرار الشاملة ---
 TOKEN = os.environ.get("TOKEN", "8886929977:AAHPBrqjqk9GtD0LzCEZtqp0y1fjvDndWG4")
 API_BASE = "https://lirascope.syria-cloud.sy/api/v1"
 
@@ -42,6 +42,14 @@ def get_exchange_data():
         return response.json()
     except Exception as e:
         logger.error(f"خطأ في جلب الأسعار: {e}")
+        return None
+
+def get_usd_based_data():
+    try:
+        response = requests.get(f"{API_BASE}/rates/usd-based?lang=ar", timeout=10)
+        return response.json()
+    except Exception as e:
+        logger.error(f"خطأ في جلب أسعار العملات بالدولار: {e}")
         return None
 
 def get_gold_data():
@@ -65,7 +73,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_users.add(user_id)
     
     keyboard = [
-        [InlineKeyboardButton("💱 أسعار العملات", callback_data="sec_currencies", style="success")],
+        [InlineKeyboardButton("💱 أسعار العملات (السوق والمصرف)", callback_data="sec_currencies", style="success")],
+        [InlineKeyboardButton("🌍 أسعار العملات (مقابل الدولار)", callback_data="sec_usd_based", style="success")],
         [InlineKeyboardButton("🟡 أسعار الذهب والمعادن", callback_data="sec_gold", style="success")],
         [InlineKeyboardButton("⛽ أسعار المحروقات", callback_data="sec_fuels", style="success")],
         [InlineKeyboardButton("🪙 العملات الرقمية", callback_data="sec_crypto", style="success")],
@@ -75,9 +84,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "مرحباً بك في بوت أسعار الصرف والتحديثات الفورية (عبر LiraScope).\n"
-        "• اختر القسم المطلوبة للاطلاع على أسعاره أو متابعتها.\n"
-        "• أو اختر نوع التحويل ثم **اكتب الرقم والكمية مباشرة في الدردشة** لتحويلها بدقة!",
+        "مرحباً بك في بوت أسعار الصرف والتحديثات الشاملة (عبر LiraScope).\n"
+        "• اختر القسم المطلوب من الأزرار أدناه للاطلاع على الأسعار.\n"
+        "• أو اختر نوع التحويل ثم **اكتب الرقم مباشرة في الدردشة** لتحويله بدقة!",
         reply_markup=reply_markup
     )
 
@@ -89,12 +98,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data == "sec_currencies":
         rates_data = get_exchange_data()
-        text = "💱 **قسـم العملات:**\n\n"
+        text = "💱 **قسـم العملات (السوق والمصرف المركزي):**\n\n"
         has_data = False
         if rates_data:
             if "marketRates" in rates_data and rates_data["marketRates"]:
                 has_data = True
-                text += "🔸 *أسعار السوق السوداء:*\n"
+                text += "🔸 *أسعار السوق:*\n"
                 for item in rates_data["marketRates"]:
                     text += f"• **{item.get('currency')}**: الوسطي ({item.get('mid')}) | بيع: {item.get('sell')} | شراء: {item.get('buy')}\n"
             if "cbsRates" in rates_data and rates_data["cbsRates"]:
@@ -108,12 +117,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_main", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
+    elif data == "sec_usd_based":
+        usd_data = get_usd_based_data()
+        text = "🌍 **قسـم العملات (الأسعار بالنسبة للدولار الأمريكي):**\n\n"
+        has_data = False
+        if usd_data and "rates" in usd_data:
+            has_data = True
+            for item in usd_data["rates"]:
+                text += f"• **{item.get('currency')}**: الوسطي ({item.get('mid')}) | بيع: {item.get('sell')} | شراء: {item.get('buy')}\n"
+        if not has_data:
+            text += "❌ لا توجد بيانات متاحة حالياً."
+            
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_main", style="danger")]]
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
     elif data == "sec_gold":
         gold_data = get_gold_data()
         text = "🟡 **قسـم الذهب والمعادن:**\n\n"
         has_data = False
         if gold_data:
-            # معالجة استجابة الذهب بناءً على توثيق API (سواء كانت قائمة أو كائن)
             g_list = gold_data.get("rates", gold_data) if isinstance(gold_data, dict) else gold_data
             if isinstance(g_list, list):
                 has_data = True
@@ -132,25 +154,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "sec_fuels":
         rates_data = get_exchange_data()
+        usd_data = get_usd_based_data()
         text = "⛽ **قسـم المحروقات:**\n\n"
         has_fuels = False
         fuel_keywords = ["بنزين", "مازوت", "غاز", "fuel", "gasoline", "diesel"]
         
         all_items = []
         if rates_data:
-            if "marketRates" in rates_data:
-                all_items.extend(rates_data["marketRates"])
-            if "cbsRates" in rates_data:
-                all_items.extend(rates_data["cbsRates"])
+            if "marketRates" in rates_data: all_items.extend(rates_data["marketRates"])
+            if "cbsRates" in rates_data: all_items.extend(rates_data["cbsRates"])
+        if usd_data and "rates" in usd_data:
+            all_items.extend(usd_data["rates"])
                 
         for item in all_items:
             curr_str = str(item.get("currency", "")).lower()
             if any(kw in curr_str for kw in fuel_keywords):
                 has_fuels = True
-                text += f"• **{item.get('currency')}**: الوسطي ({item.get('mid')}) | بيع: {item.get('sell')} | شراء: {item.get('buy')}\n"
+                text += f"• **{item.get('currency')}**: الوسطي ({item.get('mid')}) | بيع: {item.get('sell', '-')} | شراء: {item.get('buy', '-')}\n"
                 
         if not has_fuels:
-            text += "❌ بيانات المحروقات غير متوفرة في الـ API الحالي حالياً."
+            text += "❌ بيانات المحروقات غير متوفرة في الـ API حالياً."
             
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_main", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -199,7 +222,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_main":
         user_states.pop(user_id, None)
         keyboard = [
-            [InlineKeyboardButton("💱 أسعار العملات", callback_data="sec_currencies", style="success")],
+            [InlineKeyboardButton("💱 أسعار العملات (السوق والمصرف)", callback_data="sec_currencies", style="success")],
+            [InlineKeyboardButton("🌍 أسعار العملات (مقابل الدولار)", callback_data="sec_usd_based", style="success")],
             [InlineKeyboardButton("🟡 أسعار الذهب والمعادن", callback_data="sec_gold", style="success")],
             [InlineKeyboardButton("⛽ أسعار المحروقات", callback_data="sec_fuels", style="success")],
             [InlineKeyboardButton("🪙 العملات الرقمية", callback_data="sec_crypto", style="success")],
