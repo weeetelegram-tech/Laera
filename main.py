@@ -26,9 +26,9 @@ def run_dummy_server():
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 # --- 2. كود البوت مع التوكن المحدث ---
-TOKEN = os.environ.get("TOKEN", "8886929977:AAGaNWSvPcZWurO0XfxSTfu0B7wxD3wyzDM")
+TOKEN = os.environ.get("TOKEN", "8886929977:AAHj-5yZ_N6WQV0USUnBplwouTSJBodU4-c")
 
-# رابط جلب كافة البيانات المطلوبة (عملات، محروقات بجميع أنواعها، معادن כולל الفضة، والعملات الرقمية كاملة)
+# رابط جلب كافة البيانات المتاحة (عملات، محروقات، معادن، عملات رقمية)
 API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,sar,aed,jod,gas,mazot,mazot_free,benzin,benzin_free,g24sypd,g21sypd,g18sypd,silver,btc,eth,usdt,bnb,sol,xrp,usdc,ada,doge,dot"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -42,10 +42,10 @@ def get_exchange_data():
     try:
         response = requests.get(API_URL, timeout=10)
         data = response.json()
-        return data
+        return data if isinstance(data, dict) else {}
     except Exception as e:
         logger.error(f"خطأ في جلب السعر: {e}")
-        return None
+        return {}
 
 async def set_bot_commands(application: Application):
     commands = [
@@ -77,12 +77,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
     
+    raw_data = get_exchange_data()
+    
     # القائمة الرئيسية للأقسام
     if data == "sections_menu":
         keyboard = [
             [InlineKeyboardButton("💵 قسم العملات", callback_data="cat_currencies", style="primary")],
             [InlineKeyboardButton("⛽ قسم المحروقات", callback_data="cat_fuels", style="success")],
-            [InlineKeyboardButton("🪙 قسم المعادن", callback_data="cat_metals", style="success")],
+            [InlineKeyboardButton("🪙 قسم المعادن والفضة", callback_data="cat_metals", style="success")],
             [InlineKeyboardButton("🪙 قسم العملات الرقمية", callback_data="cat_crypto", style="primary")],
             [InlineKeyboardButton("📊 عرض كل الأقسام دفعة واحدة", callback_data="get_prices", style="success")],
             [InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_main", style="danger")]
@@ -93,57 +95,61 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
-    # عرض قسم العملات
-    elif data == "cat_currencies":
-        raw_data = get_exchange_data()
-        text = "💵 **[ قسم العملات ]**\n\n"
-        keys = ["usdsypd", "eursyp", "usdtry", "sar", "aed", "jod"]
-        text += format_section_data(raw_data, keys)
+    # تعريف الرموز التابعة لكل قسم
+    currency_keys = ["usdsypd", "eursyp", "usdtry", "sar", "aed", "jod"]
+    fuel_keys = ["gas", "mazot", "mazot_free", "benzin", "benzin_free"]
+    metal_keys = ["g24sypd", "g21sypd", "g18sypd", "silver"]
+    crypto_keys = ["btc", "eth", "usdt", "bnb", "sol", "xrp", "usdc", "ada", "doge", "dot"]
+
+    if data == "cat_currencies":
+        text = "💵 **[ قسم العملات ]**\n\n" + format_section_data(raw_data, currency_keys)
         keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # عرض قسم المحروقات (بأنواعها)
     elif data == "cat_fuels":
-        raw_data = get_exchange_data()
-        text = "⛽ **[ قسم المحروقات ]**\n\n"
-        keys = ["gas", "mazot", "mazot_free", "benzin", "benzin_free"]
-        text += format_section_data(raw_data, keys)
+        text = "⛽ **[ قسم المحروقات ]**\n\n" + format_section_data(raw_data, fuel_keys)
         keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # عرض قسم المعادن (مع الفضة والذهب)
     elif data == "cat_metals":
-        raw_data = get_exchange_data()
-        text = "🪙 **[ قسم المعادن والذهب والفضة ]**\n\n"
-        keys = ["g24sypd", "g21sypd", "g18sypd", "silver"]
-        text += format_section_data(raw_data, keys)
+        text = "🪙 **[ قسم المعادن والفضة والذهب ]**\n\n" + format_section_data(raw_data, metal_keys)
         keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # عرض قسم العملات الرقمية (شامل كل العملات الظاهرة في الصورة)
     elif data == "cat_crypto":
-        raw_data = get_exchange_data()
-        text = "🪙 **[ قسم العملات الرقمية ]**\n\n"
-        keys = ["btc", "eth", "usdt", "bnb", "sol", "xrp", "usdc", "ada", "doge", "dot"]
-        text += format_section_data(raw_data, keys)
+        text = "🪙 **[ قسم العملات الرقمية ]**\n\n" + format_section_data(raw_data, crypto_keys)
         keyboard = [[InlineKeyboardButton("🔙 عودة للقائمة", callback_data="sections_menu", style="danger")]]
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # عرض كل الأقسام مجتمعة
     elif data == "get_prices":
-        raw_data = get_exchange_data()
-        if raw_data and isinstance(raw_data, dict):
+        if raw_data:
             text = "📊 **النشرة الشاملة لجميع الأسعار:**\n\n"
-            sections = {
-                "💵 قسم العملات": ["usdsypd", "eursyp", "usdtry", "sar", "aed", "jod"],
-                "⛽ قسم المحروقات": ["gas", "mazot", "mazot_free", "benzin", "benzin_free"],
-                "🪙 قسم المعادن": ["g24sypd", "g21sypd", "g18sypd", "silver"],
-                "🪙 قسم العملات الرقمية": ["btc", "eth", "usdt", "bnb", "sol", "xrp", "usdc", "ada", "doge", "dot"]
-            }
-            for section_title, keys in sections.items():
+            sections = [
+                ("💵 قسم العملات", currency_keys),
+                ("⛽ قسم المحروقات", fuel_keys),
+                ("🪙 قسم المعادن والفضة", metal_keys),
+                ("🪙 قسم العملات الرقمية", crypto_keys)
+            ]
+            
+            rendered_keys = set()
+            for section_title, keys in sections:
                 sec_text = format_section_data(raw_data, keys)
-                if sec_text:
+                if sec_text.strip():
                     text += f"__**{section_title}**__\n" + sec_text + "\n"
+                    for k in keys:
+                        rendered_keys.add(k)
+            
+            # التقاط أي عنصر إضافي قد يكون موجوداً في الـ API ولم يُصنف
+            other_text = ""
+            for k, v in raw_data.items():
+                if k not in rendered_keys and isinstance(v, dict):
+                    val = v.get('value', 'غير متوفر')
+                    sell = v.get('sell', '-')
+                    buy = v.get('buy', '-')
+                    other_text += f"🔸 **{k.upper()}**:\n▫️ القيمة: **{val}**\n🔴 البيع: **{sell}** | 🟢 الشراء: **{buy}**\n\n"
+            
+            if other_text:
+                text += f"__**📌 أخرى الواردة من الـ API**__\n" + other_text
         else:
             text = "❌ تعذر جلب الأسعار حالياً، حاول لاحقاً."
             
@@ -180,8 +186,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("اختر ما تحتاجه:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 def format_section_data(raw_data, keys):
-    """دالة مساعدة لتنسيق البيانات ضمن القسم المطلوب"""
-    if not raw_data or not isinstance(raw_data, dict):
+    """دالة تعرض العناصر الموجودة فعلياً في استجابة الـ API مع تسميات واضحة"""
+    if not raw_data:
         return "▫️ لا توجد بيانات متاحة حالياً.\n"
     
     names_map = {
@@ -192,10 +198,10 @@ def format_section_data(raw_data, keys):
         "aed": "🇦🇪 الدرهم الإماراتي",
         "jod": "🇯🇴 الدينار الأردني",
         "gas": "🔥 أسطوانة الغاز",
-        "mazot": "🛢️ مادة المازوت (عادي/مدعوم)",
-        "mazot_free": "🛢️ مادة المازوت (حر)",
-        "benzin": "⛽ مادة البنزين (مدعوم)",
-        "benzin_free": "⛽ مادة البنزين (حر/أوكتان)",
+        "mazot": "🛢️ المازوت (عام/مدعوم)",
+        "mazot_free": "🛢️ المازوت (حر)",
+        "benzin": "⛽ البنزين (مدعوم)",
+        "benzin_free": "⛽ البنزين (حر)",
         "g24sypd": "🪙 غرام الذهب عيار 24",
         "g21sypd": "🪙 غرام الذهب عيار 21",
         "g18sypd": "🪙 غرام الذهب عيار 18",
@@ -213,8 +219,10 @@ def format_section_data(raw_data, keys):
     }
     
     content = ""
+    found_any = False
     for key in keys:
-        if key in raw_data:
+        if key in raw_data and isinstance(raw_data[key], dict):
+            found_any = True
             price_info = raw_data[key]
             title = names_map.get(key, f"🔸 {key.upper()}")
             val = price_info.get('value', 'غير متوفر')
@@ -226,6 +234,10 @@ def format_section_data(raw_data, keys):
                 f"▫️ القيمة: **{val}**\n"
                 f"🔴 البيع: **{sell}** | 🟢 الشراء: **{buy}**\n\n"
             )
+            
+    if not found_any:
+        return "▫️ لا تتوفر معلومات لهذا القسم حالياً.\n"
+        
     return content
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
