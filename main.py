@@ -26,7 +26,7 @@ def run_dummy_server():
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 # --- 2. كود البوت مع التوكن المحدث ---
-TOKEN = os.environ.get("TOKEN", "8886929977:AAHj-5yZ_N6WQV0USUnBplwouTSJBodU4-c")
+TOKEN = os.environ.get("TOKEN", "8886929977:AAGaNWSvPcZWurO0XfxSTfu0B7wxD3wyzDM")
 
 # رابط جلب كافة البيانات المتاحة (عملات، محروقات، معادن، عملات رقمية)
 API_URL = "https://liranews.info/api/public/v1/price/usdsypd,eursyp,usdtry,sar,aed,jod,gas,mazot,mazot_free,benzin,benzin_free,g24sypd,g21sypd,g18sypd,silver,btc,eth,usdt,bnb,sol,xrp,usdc,ada,doge,dot"
